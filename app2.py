@@ -2,17 +2,16 @@ import os
 from flask import Flask, request, jsonify, render_template_string
 import secrets
 import time
-import uuid
 
 app = Flask(__name__)
 application = app  # Para compatibilidade com ambientes como o Render ou AWS
 
-# Armazenamento para chave, timestamp e sessões ativas
+# Armazenamento para chave, timestamp, usuários permitidos e dispositivos logados
 key_data = {
     "key": None,
-    "timestamp": None
+    "timestamp": None,
+    "logged_in_devices": {}  # Armazena dispositivos logados por usuário
 }
-active_sessions = {}  # Para armazenar sessões ativas
 
 # Usuários permitidos
 allowed_users = {
@@ -20,7 +19,7 @@ allowed_users = {
     "wlsn", "edrd", "vttb", "tmmz", "wltr", "crtntt", 
     "wndrsn", "rcrd", "ndrtx", "vttbt", "mrn", "rflcr", 
     "cnt", "wbss", "zr1", "nbsbt"
-}
+}  # Adicione os usuários permitidos aqui
 
 # Função para gerar uma chave aleatória
 def generate_key():
@@ -134,87 +133,79 @@ def login():
 @app.route('/generate', methods=['POST'])
 def generate():
     username = request.form.get('username')
-    
-    if username in allowed_users:
-        if username in active_sessions:  # Verifica se já existe uma sessão ativa
-            return jsonify({"error": "Usuário já está logado em outro dispositivo."}), 403
-        
-        # Gera a nova sessão
-        session_id = str(uuid.uuid4())
-        active_sessions[username] = session_id
+    device_id = request.remote_addr  # Usando o endereço IP como identificação do dispositivo
 
-        if not is_key_valid():
-            key_data["key"] = generate_key()
-            key_data["timestamp"] = time.time()
+    if username in allowed_users:  # Verifica se o usuário está na lista permitida
+        if device_id not in key_data["logged_in_devices"].get(username, []):  # Verifica se o dispositivo já está logado
+            if not is_key_valid():
+                key_data["key"] = generate_key()
+                key_data["timestamp"] = time.time()
 
-        return render_template_string(f'''
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Access Key</title>
-            <style>
-                body {{
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    height: 100vh;
-                    margin: 0;
-                    position: relative;
-                    flex-direction: column;
-                }}
-                .content {{
-                    text-align: center;
-                    margin-top: 20px;
-                }}
-                .author {{
-                    position: absolute;
-                    top: 10px;
-                    left: 10px;
-                    color: #000;
-                    font-size: 18px;
-                }}
-                .banner-telegram {{
-                    position: absolute;
-                    top: 10px;
-                    right: 10px;
-                    background-color: #0088cc;
-                    padding: 10px;
-                    border-radius: 5px;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                }}
-                .banner-telegram a {{
-                    color: #ffcc00;
-                    text-decoration: none;
-                    font-weight: bold;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="author">Autor: Keno Venas</div>
-            <div class="banner-telegram">
-                <a href="https://t.me/+Mns6IsONSxliZDkx" target="_blank">Grupo do Telegram</a>
-            </div>
-            <div class="content">
-                <h1>Access Key</h1>
-                <p>{key_data["key"]}</p>
-                <p>Session ID: {session_id}</p>
-            </div>
-        </body>
-        </html>
-        ''')
+            # Adiciona o dispositivo à lista de dispositivos logados
+            if username not in key_data["logged_in_devices"]:
+                key_data["logged_in_devices"][username] = []
+            key_data["logged_in_devices"][username].append(device_id)
+
+            return render_template_string(f'''
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Access Key</title>
+                <style>
+                    body {{
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                        position: relative;
+                        flex-direction: column;
+                    }}
+                    .content {{
+                        text-align: center;
+                        margin-top: 20px;
+                    }}
+                    .author {{
+                        position: absolute;
+                        top: 10px;
+                        left: 10px;
+                        color: #000;
+                        font-size: 18px;
+                    }}
+                    .banner-telegram {{
+                        position: absolute;
+                        top: 10px;
+                        right: 10px;
+                        background-color: #0088cc;
+                        padding: 10px;
+                        border-radius: 5px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                    }}
+                    .banner-telegram a {{
+                        color: #ffcc00;
+                        text-decoration: none;
+                        font-weight: bold;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="author">Autor = Keno Venas</div>
+                <div class="banner-telegram">
+                    <a href="https://t.me/+Mns6IsONSxliZDkx" target="_blank">Grupo do Telegram</a>
+                </div>
+                <div class="content">
+                    <h1>Access Key</h1>
+                    <p>{key_data["key"]}</p>
+                </div>
+            </body>
+            </html>
+            ''')
+        else:
+            return "Acesso negado: dispositivo já está logado.", 403
     else:
-        return jsonify({"error": "Acesso negado"}), 403
-
-# Rota para logout
-@app.route('/logout', methods=['POST'])
-def logout():
-    username = request.form.get('username')
-    if username in active_sessions:
-        del active_sessions[username]
-        return jsonify({"message": "Logout realizado com sucesso!"}), 200
-    return jsonify({"error": "Usuário não está logado."}), 404
+        return "Acesso negado", 401
 
 # Rota para validação da chave
 @app.route('/validate', methods=['POST'])
