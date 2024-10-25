@@ -28,4 +28,7 @@ def validar_usuario():
         return jsonify({'autorizado': False}), 403  # Forbidden
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # Certifique-se de que a porta está configurada para ser dinâmica no Render
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
